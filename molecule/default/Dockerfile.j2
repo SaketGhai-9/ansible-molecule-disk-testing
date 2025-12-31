@@ -1,0 +1,16 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y \
+    python3 \
+    sudo \
+    bash \
+    ca-certificates \
+    e2fsprogs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a disk image file
+RUN dd if=/dev/zero of=/disk.img bs=1M count=100
+
+# Format it directly as ext4 (without loopback)
+RUN mkfs.ext4 -F /disk.img

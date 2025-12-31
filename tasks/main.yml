@@ -1,0 +1,13 @@
+---
+- name: Ensure mount point exists
+  file:
+    path: "{{ mount_point | default('/mnt/data') }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Mount the disk image directly
+  command: mount -o loop /disk.img {{ mount_point | default('/mnt/data') }}
+  args:
+    creates: "{{ mount_point | default('/mnt/data') }}/lost+found"
+  become: true

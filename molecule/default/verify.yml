@@ -1,0 +1,41 @@
+---
+- name: Verify
+  hosts: all
+  tasks:
+    - name: Check if mount point exists
+      stat:
+        path: /mnt/data
+      register: mount_point
+
+    - name: Assert mount point exists
+      assert:
+        that:
+          - mount_point.stat.exists
+          - mount_point.stat.isdir
+
+    - name: Check if disk is mounted
+      shell: mount | grep /mnt/data
+      register: mount_check
+      changed_when: false
+
+    - name: Assert disk is mounted
+      assert:
+        that:
+          - mount_check.rc == 0
+          - "'/disk.img' in mount_check.stdout"
+
+    - name: Test write to mounted disk
+      copy:
+        content: "test data"
+        dest: /mnt/data/test.txt
+      become: true
+
+    - name: Verify file was written
+      stat:
+        path: /mnt/data/test.txt
+      register: test_file
+
+    - name: Assert file exists
+      assert:
+        that:
+          - test_file.stat.exists
