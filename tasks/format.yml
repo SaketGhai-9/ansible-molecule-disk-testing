@@ -32,21 +32,25 @@
   debug:
     msg: "Formatting {{ format_target }}"
 
-- name: Check if target is already formatted
-  command: blkid {{ format_target }}
-  register: blkid_check
+- name: Check if target has a filesystem
+  shell: blkid {{ format_target }} | grep -o 'TYPE="[^"]*"' || echo "NO_FILESYSTEM"
+  register: fs_type_check
   changed_when: false
   failed_when: false
   become: true
+
+- name: Show current filesystem status
+  debug:
+    msg: "Current filesystem status: {{ fs_type_check.stdout }}"
 
 - name: Format with ext4 filesystem
   command: mkfs.ext4 -F {{ format_target }}
   when:
     - filesystem_type | default('ext4') == 'ext4'
-    - force_format | default(false) or blkid_check.rc != 0
+    - force_format | default(false) or 'NO_FILESYSTEM' in fs_type_check.stdout
   become: true
 
-- name: Get filesystem information
+- name: Get filesystem information after formatting
   command: blkid {{ format_target }}
   register: fs_info
   changed_when: false
