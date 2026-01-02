@@ -37,7 +37,7 @@
   become: true
 
 - name: Verify mount
-  command: mount | grep {{ mount_point | default('/mnt/data') }}
+  shell: mount | grep {{ mount_point | default('/mnt/data') }}
   register: mount_status
   changed_when: false
 
