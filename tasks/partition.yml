@@ -30,13 +30,17 @@
   when: partition_check.rc != 0 or 'gpt' not in partition_check.stdout
   become: true
 
+- name: Check if partition already exists
+  shell: parted -s /disk.img print | grep -E '^\s+1\s+'
+  register: partition_exists
+  changed_when: false
+  failed_when: false
+  become: true
+
 - name: Create primary partition on disk image
   command: parted -s /disk.img mkpart primary ext4 1MiB 100%
+  when: partition_exists.rc != 0
   become: true
-  register: partition_result
-  failed_when:
-    - partition_result.rc != 0
-    - "'overlaps with existing partition' not in partition_result.stderr"
 
 - name: Set up loop device for disk image
   shell: losetup -f --show --partscan /disk.img
