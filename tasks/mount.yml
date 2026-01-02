@@ -1,0 +1,30 @@
+---
+- name: Ensure mount point exists
+  file:
+    path: "{{ mount_point | default('/mnt/data') }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Determine mount source
+  set_fact:
+    mount_source: "{{ disk_loop_device | default('/disk.img') }}{% if disk_loop_device is defined %}p1{% else %}{% endif %}"
+
+- name: Display mount information
+  debug:
+    msg: "Mounting {{ mount_source }} to {{ mount_point | default('/mnt/data') }}"
+
+- name: Mount the partition
+  command: mount {{ '-o loop' if disk_loop_device is not defined else '' }} {{ mount_source }} {{ mount_point | default('/mnt/data') }}
+  args:
+    creates: "{{ mount_point | default('/mnt/data') }}/lost+found"
+  become: true
+
+- name: Verify mount
+  command: mount | grep {{ mount_point | default('/mnt/data') }}
+  register: mount_status
+  changed_when: false
+
+- name: Display mount status
+  debug:
+    var: mount_status.stdout

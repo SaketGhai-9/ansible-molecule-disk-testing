@@ -1,0 +1,95 @@
+---
+- name: Ensure partitioning tools are installed
+  package:
+    name:
+      - parted
+      - util-linux
+      - kpartx
+    state: present
+  become: true
+
+- name: Check if disk image exists
+  stat:
+    path: /disk.img
+  register: disk_img
+
+- name: Fail if disk image doesn't exist
+  fail:
+    msg: "Disk image /disk.img not found"
+  when: not disk_img.stat.exists
+
+- name: Check current partition table
+  command: parted -s /disk.img print
+  register: partition_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Create GPT partition table on disk image
+  command: parted -s /disk.img mklabel gpt
+  when: partition_check.rc != 0 or 'gpt' not in partition_check.stdout
+  become: true
+
+- name: Create primary partition on disk image
+  command: parted -s /disk.img mkpart primary ext4 1MiB 100%
+  become: true
+  register: partition_result
+  failed_when:
+    - partition_result.rc != 0
+    - "'overlaps with existing partition' not in partition_result.stderr"
+
+- name: Set up loop device for disk image
+  shell: losetup -f --show --partscan /disk.img
+  register: loop_device
+  become: true
+  changed_when: true
+
+- name: Store loop device path
+  set_fact:
+    disk_loop_device: "{{ loop_device.stdout }}"
+    cacheable: yes
+
+- name: Check if partition device exists (native Linux)
+  stat:
+    path: "{{ disk_loop_device }}p1"
+  register: native_partition
+  become: true
+
+- name: Use kpartx if native partitions don't work (Docker on Mac)
+  block:
+    - name: Map partitions using kpartx
+      command: kpartx -av {{ disk_loop_device }}
+      register: kpartx_result
+      become: true
+      changed_when: true
+
+    - name: Extract mapper device name
+      set_fact:
+        partition_device: "/dev/mapper/{{ kpartx_result.stdout_lines[0].split()[2] }}"
+        cacheable: yes
+  when: not native_partition.stat.exists
+
+- name: Use native partition device (Linux)
+  set_fact:
+    partition_device: "{{ disk_loop_device }}p1"
+    cacheable: yes
+  when: native_partition.stat.exists
+
+- name: Wait for partition device to appear
+  wait_for:
+    path: "{{ partition_device }}"
+    timeout: 10
+  become: true
+
+- name: Display partition information
+  command: parted -s /disk.img print
+  register: partition_info
+  changed_when: false
+  become: true
+
+- name: Show partition layout and device
+  debug:
+    msg:
+      - "Partition layout: {{ partition_info.stdout_lines }}"
+      - "Loop device: {{ disk_loop_device }}"
+      - "Partition device: {{ partition_device }}"

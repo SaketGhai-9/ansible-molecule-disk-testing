@@ -1,0 +1,41 @@
+---
+- name: Ensure filesystem tools are installed
+  package:
+    name:
+      - e2fsprogs
+    state: present
+  become: true
+
+- name: Determine format target
+  set_fact:
+    format_target: "{{ disk_loop_device | default('/disk.img') }}{% if disk_loop_device is defined %}p1{% endif %}"
+
+- name: Display format target
+  debug:
+    msg: "Formatting {{ format_target }}"
+
+- name: Check if target is already formatted
+  command: blkid {{ format_target }}
+  register: blkid_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Format with ext4 filesystem
+  command: mkfs.ext4 -F {{ format_target }}
+  when:
+    - filesystem_type | default('ext4') == 'ext4'
+    - force_format | default(false) or blkid_check.rc != 0
+  become: true
+
+- name: Get filesystem information
+  command: blkid {{ format_target }}
+  register: fs_info
+  changed_when: false
+  become: true
+  failed_when: false
+
+- name: Display filesystem info
+  debug:
+    var: fs_info.stdout
+  when: fs_info.rc == 0

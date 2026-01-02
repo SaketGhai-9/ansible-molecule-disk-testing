@@ -1,13 +1,14 @@
 ---
-- name: Ensure mount point exists
-  file:
-    path: "{{ mount_point | default('/mnt/data') }}"
-    state: directory
-    mode: "0755"
-  become: true
+# Main entry point - includes all disk operations
 
-- name: Mount the disk image directly
-  command: mount -o loop /disk.img {{ mount_point | default('/mnt/data') }}
-  args:
-    creates: "{{ mount_point | default('/mnt/data') }}/lost+found"
-  become: true
+- name: Include partitioning tasks
+  include_tasks: partition.yml
+  when: disk_operation == "partition" or disk_operation == "all"
+
+- name: Include formatting tasks
+  include_tasks: format.yml
+  when: disk_operation == "format" or disk_operation == "all"
+
+- name: Include mounting tasks
+  include_tasks: mount.yml
+  when: disk_operation == "mount" or disk_operation == "all"

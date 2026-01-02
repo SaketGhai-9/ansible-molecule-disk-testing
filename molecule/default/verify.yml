@@ -1,7 +1,36 @@
 ---
-- name: Verify
+- name: Verify All Disk Operations
   hosts: all
   tasks:
+    # Verify Partitioning
+    - name: Check partition table exists
+      command: parted -s /disk.img print
+      register: partition_table
+      become: true
+      changed_when: false
+
+    - name: Assert partition was created
+      assert:
+        that:
+          - partition_table.rc == 0
+          - "'gpt' in partition_table.stdout"
+        fail_msg: "Partition table not created correctly"
+
+    # Verify Formatting
+    - name: Get filesystem info
+      shell: blkid | grep -E 'loop[0-9]+p1|disk.img'
+      register: fs_check
+      become: true
+      changed_when: false
+
+    - name: Assert filesystem exists
+      assert:
+        that:
+          - fs_check.rc == 0
+          - '''ext4'' in fs_check.stdout or ''TYPE="ext4"'' in fs_check.stdout'
+        fail_msg: "Filesystem not formatted correctly"
+
+    # Verify Mounting
     - name: Check if mount point exists
       stat:
         path: /mnt/data
@@ -22,11 +51,11 @@
       assert:
         that:
           - mount_check.rc == 0
-          - "'/disk.img' in mount_check.stdout"
+        fail_msg: "Disk not mounted"
 
     - name: Test write to mounted disk
       copy:
-        content: "test data"
+        content: "test data from all operations"
         dest: /mnt/data/test.txt
       become: true
 
@@ -35,7 +64,8 @@
         path: /mnt/data/test.txt
       register: test_file
 
-    - name: Assert file exists
+    - name: Assert file exists and is writable
       assert:
         that:
           - test_file.stat.exists
+        fail_msg: "Cannot write to mounted disk"

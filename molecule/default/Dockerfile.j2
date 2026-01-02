@@ -10,7 +10,4 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a disk image file
-RUN dd if=/dev/zero of=/disk.img bs=1M count=100
-
-# Format it directly as ext4 (without loopback)
-RUN mkfs.ext4 -F /disk.img
+RUN dd if=/dev/zero of=/disk.img bs=1M count=500
