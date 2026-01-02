@@ -6,9 +6,27 @@
     state: present
   become: true
 
-- name: Determine format target
+- name: Check if partition device file exists
+  stat:
+    path: /tmp/partition_device
+  register: partition_file
+
+- name: Read partition device from file
+  slurp:
+    src: /tmp/partition_device
+  register: partition_device_content
+  become: true
+  when: partition_file.stat.exists
+
+- name: Set format target from file
   set_fact:
-    format_target: "{{ disk_loop_device | default('/disk.img') }}{% if disk_loop_device is defined %}p1{% endif %}"
+    format_target: "{{ partition_device_content['content'] | b64decode | trim }}"
+  when: partition_file.stat.exists
+
+- name: Set format target to default if no partition
+  set_fact:
+    format_target: "/disk.img"
+  when: not partition_file.stat.exists
 
 - name: Display format target
   debug:

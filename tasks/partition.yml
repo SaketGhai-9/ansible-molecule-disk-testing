@@ -47,7 +47,10 @@
 - name: Store loop device path
   set_fact:
     disk_loop_device: "{{ loop_device.stdout }}"
-    cacheable: yes
+
+- name: Wait for native partition device (give it a moment)
+  pause:
+    seconds: 2
 
 - name: Check if partition device exists (native Linux)
   stat:
@@ -55,7 +58,7 @@
   register: native_partition
   become: true
 
-- name: Use kpartx if native partitions don't work (Docker on Mac)
+- name: Use kpartx if native partitions don't work
   block:
     - name: Map partitions using kpartx
       command: kpartx -av {{ disk_loop_device }}
@@ -63,16 +66,32 @@
       become: true
       changed_when: true
 
+    - name: Wait for mapper device
+      pause:
+        seconds: 2
+
     - name: Extract mapper device name
       set_fact:
         partition_device: "/dev/mapper/{{ kpartx_result.stdout_lines[0].split()[2] }}"
-        cacheable: yes
+
+    - name: Save partition device to file
+      copy:
+        content: "{{ partition_device }}"
+        dest: /tmp/partition_device
+      become: true
   when: not native_partition.stat.exists
 
 - name: Use native partition device (Linux)
-  set_fact:
-    partition_device: "{{ disk_loop_device }}p1"
-    cacheable: yes
+  block:
+    - name: Set partition device
+      set_fact:
+        partition_device: "{{ disk_loop_device }}p1"
+
+    - name: Save partition device to file
+      copy:
+        content: "{{ partition_device }}"
+        dest: /tmp/partition_device
+      become: true
   when: native_partition.stat.exists
 
 - name: Wait for partition device to appear

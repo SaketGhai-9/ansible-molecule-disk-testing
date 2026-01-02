@@ -6,18 +6,34 @@
     mode: "0755"
   become: true
 
-- name: Determine mount source
+- name: Check if partition device file exists
+  stat:
+    path: /tmp/partition_device
+  register: partition_file
+
+- name: Read partition device from file
+  slurp:
+    src: /tmp/partition_device
+  register: partition_device_content
+  become: true
+  when: partition_file.stat.exists
+
+- name: Set mount source from file
   set_fact:
-    mount_source: "{{ disk_loop_device | default('/disk.img') }}{% if disk_loop_device is defined %}p1{% else %}{% endif %}"
+    mount_source: "{{ partition_device_content['content'] | b64decode | trim }}"
+  when: partition_file.stat.exists
+
+- name: Set mount source to default if no partition
+  set_fact:
+    mount_source: "/disk.img"
+  when: not partition_file.stat.exists
 
 - name: Display mount information
   debug:
     msg: "Mounting {{ mount_source }} to {{ mount_point | default('/mnt/data') }}"
 
-- name: Mount the partition
-  command: mount {{ '-o loop' if disk_loop_device is not defined else '' }} {{ mount_source }} {{ mount_point | default('/mnt/data') }}
-  args:
-    creates: "{{ mount_point | default('/mnt/data') }}/lost+found"
+- name: Mount the partition or disk
+  command: mount {{ '-o loop' if not partition_file.stat.exists else '' }} {{ mount_source }} {{ mount_point | default('/mnt/data') }}
   become: true
 
 - name: Verify mount
