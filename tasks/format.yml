@@ -1,0 +1,63 @@
+---
+- name: Ensure filesystem tools are installed
+  package:
+    name:
+      - e2fsprogs
+    state: present
+  become: true
+
+- name: Check if partition device file exists
+  stat:
+    path: /tmp/partition_device
+  register: partition_file
+
+- name: Read partition device from file
+  slurp:
+    src: /tmp/partition_device
+  register: partition_device_content
+  become: true
+  when: partition_file.stat.exists
+
+- name: Set format target from file
+  set_fact:
+    format_target: "{{ partition_device_content['content'] | b64decode | trim }}"
+  when: partition_file.stat.exists
+
+- name: Set format target to default if no partition
+  set_fact:
+    format_target: "/disk.img"
+  when: not partition_file.stat.exists
+
+- name: Display format target
+  debug:
+    msg: "Formatting {{ format_target }}"
+
+- name: Check if target has a filesystem
+  shell: blkid {{ format_target }} | grep -o 'TYPE="[^"]*"' || echo "NO_FILESYSTEM"
+  register: fs_type_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Show current filesystem status
+  debug:
+    msg: "Current filesystem status: {{ fs_type_check.stdout }}"
+
+- name: Format with ext4 filesystem
+  command: mkfs.ext4 -F {{ format_target }}
+  when:
+    - filesystem_type | default('ext4') == 'ext4'
+    - force_format | default(false) or 'NO_FILESYSTEM' in fs_type_check.stdout
+  become: true
+
+- name: Get filesystem information after formatting
+  command: blkid {{ format_target }}
+  register: fs_info
+  changed_when: false
+  become: true
+  failed_when: false
+
+- name: Display filesystem info
+  debug:
+    var: fs_info.stdout
+  when: fs_info.rc == 0

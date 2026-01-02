@@ -1,0 +1,140 @@
+---
+- name: Ensure partitioning tools are installed
+  package:
+    name:
+      - parted
+      - util-linux
+      - kpartx
+    state: present
+  become: true
+
+- name: Check if disk image exists
+  stat:
+    path: /disk.img
+  register: disk_img
+
+- name: Fail if disk image doesn't exist
+  fail:
+    msg: "Disk image /disk.img not found"
+  when: not disk_img.stat.exists
+
+- name: Check current partition table
+  command: parted -s /disk.img print
+  register: partition_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Create GPT partition table on disk image
+  command: parted -s /disk.img mklabel gpt
+  when: partition_check.rc != 0 or 'gpt' not in partition_check.stdout
+  become: true
+
+- name: Check if partition already exists
+  shell: parted -s /disk.img print | grep -E '^\s+1\s+'
+  register: partition_exists
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Create primary partition on disk image
+  command: parted -s /disk.img mkpart primary ext4 1MiB 100%
+  when: partition_exists.rc != 0
+  become: true
+
+- name: Check if loop device already exists for this image
+  shell: "losetup -j /disk.img | head -n1 | cut -d: -f1"
+  register: existing_loop
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Set up loop device for disk image (if not exists)
+  shell: losetup -f --show --partscan /disk.img
+  register: loop_device
+  become: true
+  changed_when: true
+  when: existing_loop.stdout == ""
+
+- name: Use existing loop device
+  set_fact:
+    disk_loop_device: "{{ existing_loop.stdout if existing_loop.stdout != '' else loop_device.stdout }}"
+
+- name: Wait for native partition device (give it a moment)
+  pause:
+    seconds: 2
+  when: existing_loop.stdout == ""
+
+- name: Check if partition device exists (native Linux)
+  stat:
+    path: "{{ disk_loop_device }}p1"
+  register: native_partition
+  become: true
+
+- name: Get loop device basename
+  set_fact:
+    loop_basename: "{{ disk_loop_device | basename }}"
+
+- name: Check if kpartx mapping already exists
+  shell: "dmsetup ls | grep {{ loop_basename }}p1 || echo 'NOT_FOUND'"
+  register: existing_mapper
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Use kpartx if native partitions don't work
+  block:
+    - name: Map partitions using kpartx
+      command: kpartx -av {{ disk_loop_device }}
+      register: kpartx_result
+      become: true
+      changed_when: "'add map' in kpartx_result.stdout"
+      when: "'NOT_FOUND' in existing_mapper.stdout"
+
+    - name: Wait for mapper device
+      pause:
+        seconds: 2
+      when: "'NOT_FOUND' in existing_mapper.stdout"
+
+    - name: Extract mapper device name
+      set_fact:
+        partition_device: "/dev/mapper/{{ disk_loop_device | basename }}p1"
+
+    - name: Save partition device to file
+      copy:
+        content: "{{ partition_device }}"
+        dest: /tmp/partition_device
+      become: true
+  when: not native_partition.stat.exists
+
+- name: Use native partition device (Linux)
+  block:
+    - name: Set partition device
+      set_fact:
+        partition_device: "{{ disk_loop_device }}p1"
+
+    - name: Save partition device to file
+      copy:
+        content: "{{ partition_device }}"
+        dest: /tmp/partition_device
+      become: true
+  when: native_partition.stat.exists
+
+- name: Wait for partition device to appear
+  wait_for:
+    path: "{{ partition_device }}"
+    timeout: 10
+  become: true
+
+- name: Display partition information
+  command: parted -s /disk.img print
+  register: partition_info
+  changed_when: false
+  become: true
+
+- name: Show partition layout and device
+  debug:
+    msg:
+      - "Partition layout: {{ partition_info.stdout_lines }}"
+      - "Loop device: {{ disk_loop_device }}"
+      - "Partition device: {{ partition_device }}"

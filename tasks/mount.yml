@@ -1,0 +1,53 @@
+---
+- name: Ensure mount point exists
+  file:
+    path: "{{ mount_point | default('/mnt/data') }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Check if partition device file exists
+  stat:
+    path: /tmp/partition_device
+  register: partition_file
+
+- name: Read partition device from file
+  slurp:
+    src: /tmp/partition_device
+  register: partition_device_content
+  become: true
+  when: partition_file.stat.exists
+
+- name: Set mount source from file
+  set_fact:
+    mount_source: "{{ partition_device_content['content'] | b64decode | trim }}"
+  when: partition_file.stat.exists
+
+- name: Set mount source to default if no partition
+  set_fact:
+    mount_source: "/disk.img"
+  when: not partition_file.stat.exists
+
+- name: Display mount information
+  debug:
+    msg: "Mounting {{ mount_source }} to {{ mount_point | default('/mnt/data') }}"
+
+- name: Check if already mounted
+  shell: mount | grep "{{ mount_point | default('/mnt/data') }}"
+  register: mount_check
+  changed_when: false
+  failed_when: false
+
+- name: Mount the partition or disk
+  command: mount {{ '-o loop' if not partition_file.stat.exists else '' }} {{ mount_source }} {{ mount_point | default('/mnt/data') }}
+  become: true
+  when: mount_check.rc != 0
+
+- name: Verify mount
+  shell: mount | grep {{ mount_point | default('/mnt/data') }}
+  register: mount_status
+  changed_when: false
+
+- name: Display mount status
+  debug:
+    var: mount_status.stdout

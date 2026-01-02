@@ -1,17 +1,34 @@
 name: Molecule Test
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main # Only run on push to main branch
+  pull_request:
+    branches:
+      - main # Run on PRs targeting main
 
 jobs:
   molecule:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.9"
+
       - name: Install dependencies
         run: |
           pip install molecule molecule-docker ansible-core
-      - name: Run Molecule tests
+
+      - name: Run Molecule tests (Partition + Format + Mount)
         run: molecule test
+
+      - name: Show test summary
+        if: always()
+        run: |
+          echo "Molecule test completed"
+          echo "Operations tested: Partition, Format, Mount"

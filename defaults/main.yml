@@ -1,0 +1,9 @@
+---
+# Default variables for disk operations
+
+disk_operation: "all" # Options: partition, format, mount, all
+disk_device: "/disk.img"
+disk_image: "/disk.img"
+filesystem_type: "ext4" # Options: ext4, xfs, ext3
+mount_point: "/mnt/data"
+force_format: false
