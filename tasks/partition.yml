@@ -1,7 +1,7 @@
 ---
 - name: Ensure partitioning tools are installed
   package:
-    name: 
+    name:
       - parted
       - util-linux
       - kpartx
@@ -43,7 +43,7 @@
   become: true
 
 - name: Check if loop device already exists for this image
-  shell: losetup -j /disk.img | head -n1 | cut -d: -f1
+  shell: "losetup -j /disk.img | head -n1 | cut -d: -f1"
   register: existing_loop
   changed_when: false
   failed_when: false
@@ -71,8 +71,12 @@
   register: native_partition
   become: true
 
+- name: Get loop device basename
+  set_fact:
+    loop_basename: "{{ disk_loop_device | basename }}"
+
 - name: Check if kpartx mapping already exists
-  shell: dmsetup ls | grep "{{ disk_loop_device | basename }}p1" || echo "NOT_FOUND"
+  shell: "dmsetup ls | grep {{ loop_basename }}p1 || echo 'NOT_FOUND'"
   register: existing_mapper
   changed_when: false
   failed_when: false
