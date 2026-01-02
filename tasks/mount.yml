@@ -32,9 +32,16 @@
   debug:
     msg: "Mounting {{ mount_source }} to {{ mount_point | default('/mnt/data') }}"
 
+- name: Check if already mounted
+  shell: mount | grep "{{ mount_point | default('/mnt/data') }}"
+  register: mount_check
+  changed_when: false
+  failed_when: false
+
 - name: Mount the partition or disk
   command: mount {{ '-o loop' if not partition_file.stat.exists else '' }} {{ mount_source }} {{ mount_point | default('/mnt/data') }}
   become: true
+  when: mount_check.rc != 0
 
 - name: Verify mount
   shell: mount | grep {{ mount_point | default('/mnt/data') }}

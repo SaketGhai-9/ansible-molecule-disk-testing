@@ -1,7 +1,7 @@
 ---
 - name: Ensure partitioning tools are installed
   package:
-    name:
+    name: 
       - parted
       - util-linux
       - kpartx
@@ -42,24 +42,40 @@
   when: partition_exists.rc != 0
   become: true
 
-- name: Set up loop device for disk image
+- name: Check if loop device already exists for this image
+  shell: losetup -j /disk.img | head -n1 | cut -d: -f1
+  register: existing_loop
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Set up loop device for disk image (if not exists)
   shell: losetup -f --show --partscan /disk.img
   register: loop_device
   become: true
   changed_when: true
+  when: existing_loop.stdout == ""
 
-- name: Store loop device path
+- name: Use existing loop device
   set_fact:
-    disk_loop_device: "{{ loop_device.stdout }}"
+    disk_loop_device: "{{ existing_loop.stdout if existing_loop.stdout != '' else loop_device.stdout }}"
 
 - name: Wait for native partition device (give it a moment)
   pause:
     seconds: 2
+  when: existing_loop.stdout == ""
 
 - name: Check if partition device exists (native Linux)
   stat:
     path: "{{ disk_loop_device }}p1"
   register: native_partition
+  become: true
+
+- name: Check if kpartx mapping already exists
+  shell: dmsetup ls | grep "{{ disk_loop_device | basename }}p1" || echo "NOT_FOUND"
+  register: existing_mapper
+  changed_when: false
+  failed_when: false
   become: true
 
 - name: Use kpartx if native partitions don't work
@@ -68,15 +84,17 @@
       command: kpartx -av {{ disk_loop_device }}
       register: kpartx_result
       become: true
-      changed_when: true
+      changed_when: "'add map' in kpartx_result.stdout"
+      when: "'NOT_FOUND' in existing_mapper.stdout"
 
     - name: Wait for mapper device
       pause:
         seconds: 2
+      when: "'NOT_FOUND' in existing_mapper.stdout"
 
     - name: Extract mapper device name
       set_fact:
-        partition_device: "/dev/mapper/{{ kpartx_result.stdout_lines[0].split()[2] }}"
+        partition_device: "/dev/mapper/{{ disk_loop_device | basename }}p1"
 
     - name: Save partition device to file
       copy:
